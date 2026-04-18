@@ -24,7 +24,6 @@ async def main():
         max_concurrent_activities=1,
         disable_eager_activity_execution=True,
     )
-    print("Worker started (max_concurrent_activities=1, eager dispatch disabled)")
     await worker.run()
 
 
