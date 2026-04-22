@@ -19,16 +19,64 @@ def run_async(coro):
     return _loop.run_until_complete(coro)
 
 
-# --- Config ---
+# --- Holocene design tokens (dark mode) ---
+# Palette
+SLATE_300 = "#92A4C3"
+SLATE_700 = "#465A78"
+SLATE_800 = "#273860"
+SLATE_900 = "#1E293B"
+SLATE_950 = "#0F172A"
+SPACE_BLACK = "#141414"
+OFF_WHITE = "#F8FAFC"
+RED_400 = "#FF6637"
+YELLOW_400 = "#FEC321"
+BLUE_500 = "#3B82F6"
+GREEN_600 = "#00C05F"
+INDIGO_500 = "#6173F3"
+PURPLE_500 = "#8B5CF6"
+
+# Semantic tokens
+TEXT_PRIMARY = OFF_WHITE
+TEXT_SECONDARY = SLATE_300
+TEXT_SUBTLE = SLATE_700
+SURFACE_BG = SPACE_BLACK
+SURFACE_PRIMARY = "#000000"
+SURFACE_SECONDARY = SLATE_950
+BORDER_SECONDARY = SLATE_700
+BORDER_SUBTLE = SLATE_800
+BRAND = INDIGO_500
+RADIUS = "4px"
+FONT_SANS = "'Inter', sans-serif"
+FONT_MONO = "'Noto Sans Mono', monospace"
+
+# --- Feature colors mapped to Holocene palette ---
 PRIORITY_LABELS = {1: "High", 3: "Medium", 5: "Low"}
-PRIORITY_COLORS = {1: "#ef4444", 3: "#f59e0b", 5: "#3b82f6"}
+PRIORITY_COLORS = {1: RED_400, 3: YELLOW_400, 5: BLUE_500}
 
 TENANT_COLORS = {
-    "tenant-big": "#ef4444",
-    "tenant-mid": "#f59e0b",
-    "tenant-small": "#3b82f6",
+    "tenant-big": RED_400,
+    "tenant-mid": YELLOW_400,
+    "tenant-small": BLUE_500,
 }
 TENANT_COUNTS = {"tenant-big": 30, "tenant-mid": 10, "tenant-small": 5}
+
+
+# --- Streamlit theme override ---
+def apply_theme():
+    st.markdown(f"""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Mono:wght@400;600&display=swap');
+
+        .stApp, .stMarkdown, .stButton button,
+        [data-testid="stMetricLabel"], [data-testid="stHeader"],
+        section[data-testid="stSidebar"], h1, h2, h3, h4, p, label {{
+            font-family: {FONT_SANS} !important;
+        }}
+        [data-testid="stMetricValue"], code, pre {{
+            font-family: {FONT_MONO} !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -100,7 +148,6 @@ def start_priority_batch(client, count, use_priority):
 def start_fairness_batch(client, total_count, use_fairness):
     _reset_batch()
     st.session_state["tab"] = "fairness"
-    # Split roughly 60/25/15 to create an asymmetric noisy-neighbor distribution
     big = max(1, int(total_count * 0.6))
     mid = max(1, int(total_count * 0.25))
     small = max(1, total_count - big - mid)
@@ -135,38 +182,40 @@ def add_fairness_workflows(client, count, tenant, use_fairness):
 # --- Polling ---
 
 def poll_statuses(client, workflows):
-    updated = []
-    for wf in workflows:
-        try:
-            desc = run_async(client.get_workflow_handle(wf["id"]).describe())
-            status_name = desc.status.name if desc.status else "Unknown"
-            if "COMPLETED" in status_name:
-                status = "Completed"
-            else:
-                pending = desc.raw_description.pending_activities
-                if pending and pending[0].state == 1:
-                    status = "Queued"
-                elif pending and pending[0].state == 2:
-                    status = "Running"
+    async def _poll_all():
+        async def _poll_one(wf):
+            try:
+                desc = await client.get_workflow_handle(wf["id"]).describe()
+                status_name = desc.status.name if desc.status else "Unknown"
+                if "COMPLETED" in status_name:
+                    status = "Completed"
                 else:
-                    status = "Running"
-        except Exception:
-            status = "Queued"
-        updated.append({**wf, "status": status})
-    return updated
+                    pending = desc.raw_description.pending_activities
+                    if pending and pending[0].state == 2:  # STARTED
+                        status = "Running"
+                    else:
+                        # SCHEDULED, no pending yet (workflow task), or other
+                        status = "Queued"
+            except Exception:
+                status = "Queued"
+            return {**wf, "status": status}
+
+        return await asyncio.gather(*[_poll_one(wf) for wf in workflows])
+
+    return list(run_async(_poll_all()))
 
 
 # --- Rendering ---
 
 def render_priority_chiclet(wf):
     pri = wf.get("priority", 3)
-    color = PRIORITY_COLORS.get(pri, "#888")
+    color = PRIORITY_COLORS.get(pri, TEXT_SUBTLE)
     return (
         f'<div title="{wf["order_id"]} P{pri}" style="'
-        f"width:28px; height:28px; background:{color}; border-radius:4px; "
-        f'display:inline-flex; align-items:center; justify-content:center; '
-        f'margin:2px; font-size:10px; font-weight:bold; color:#fff; '
-        f'font-family:monospace;">'
+        f"width:28px; height:28px; background:{color}; border-radius:{RADIUS}; "
+        f"display:inline-flex; align-items:center; justify-content:center; "
+        f"margin:2px; font-size:10px; font-weight:600; color:{SURFACE_PRIMARY}; "
+        f'font-family:{FONT_MONO};">'
         f"{pri}"
         f"</div>"
     )
@@ -174,14 +223,14 @@ def render_priority_chiclet(wf):
 
 def render_fairness_chiclet(wf):
     tenant = wf.get("tenant", "unknown")
-    color = TENANT_COLORS.get(tenant, "#888")
+    color = TENANT_COLORS.get(tenant, TEXT_SUBTLE)
     label = tenant.split("-")[-1][0].upper() if "-" in tenant else "?"
     return (
         f'<div title="{wf["order_id"]} {tenant}" style="'
-        f"width:28px; height:28px; background:{color}; border-radius:4px; "
-        f'display:inline-flex; align-items:center; justify-content:center; '
-        f'margin:2px; font-size:10px; font-weight:bold; color:#fff; '
-        f'font-family:monospace;">'
+        f"width:28px; height:28px; background:{color}; border-radius:{RADIUS}; "
+        f"display:inline-flex; align-items:center; justify-content:center; "
+        f"margin:2px; font-size:10px; font-weight:600; color:{SURFACE_PRIMARY}; "
+        f'font-family:{FONT_MONO};">'
         f"{label}"
         f"</div>"
     )
@@ -192,29 +241,17 @@ def render_swimlane(label, workflows, render_fn, empty_msg=""):
     chiclets = "".join(render_fn(wf) for wf in workflows)
     return (
         f'<div style="margin-bottom:16px;">'
-        f'<div style="font-size:13px; font-weight:bold; color:#888; '
-        f'margin-bottom:4px; font-family:sans-serif;">'
-        f'{label} <span style="font-weight:normal; color:#555;">({count})</span></div>'
-        f'<div style="background:#111; border:1px solid #333; border-radius:6px; '
+        f'<div style="font-size:12px; font-weight:600; color:{TEXT_SECONDARY}; '
+        f'margin-bottom:4px; font-family:{FONT_SANS}; text-transform:uppercase; letter-spacing:0.05em;">'
+        f'{label} <span style="font-weight:400; color:{TEXT_SUBTLE};">({count})</span></div>'
+        f'<div style="background:{SURFACE_SECONDARY}; border:1px solid {BORDER_SUBTLE}; border-radius:{RADIUS}; '
         f'min-height:36px; padding:4px; display:flex; flex-wrap:wrap; align-items:center;">'
-        f'{chiclets if chiclets else f"<span style=&quot;color:#555; font-size:12px; padding:4px;&quot;>{empty_msg}</span>"}'
+        f'{chiclets if chiclets else f"<span style=&quot;color:{TEXT_SUBTLE}; font-size:12px; padding:4px;&quot;>{empty_msg}</span>"}'
         f"</div></div>"
     )
 
 
-def render_legend(items):
-    html = ""
-    for color, label in items:
-        html += (
-            f'<div style="display:inline-flex; align-items:center; margin-right:16px;">'
-            f'<div style="width:16px; height:16px; background:{color}; border-radius:3px; margin-right:4px;"></div>'
-            f'<span style="font-size:13px;">{label}</span></div>'
-        )
-    return html
-
-
 def render_all_swimlanes(workflows, sort_fn, render_fn):
-    # Track completion order
     seen = st.session_state.get("seen_completed", set())
     completed_order = st.session_state.get("completed_order", [])
     for wf in workflows:
@@ -254,10 +291,10 @@ def render_all_swimlanes(workflows, sort_fn, render_fn):
 
 def main():
     st.set_page_config(page_title="Task Queue Priority & Fairness", layout="wide")
+    apply_theme()
 
     client = get_client()
 
-    # --- Tabs with change detection ---
     def on_tab_change():
         st.session_state.pop("workflows", None)
         st.session_state.pop("completed_order", None)
@@ -273,7 +310,6 @@ def main():
 
     with tab_priority:
         if tab_priority.open:
-            # --- Priority sidebar ---
             with st.sidebar:
                 st.header("Priority Controls")
 
@@ -290,25 +326,24 @@ def main():
                 st.divider()
                 st.markdown("**Add to batch**")
                 add_count = st.slider("Count to add", 1, 20, 5, key="pri_add_count")
-                add_cols = st.columns(3)
-                has_batch = "workflows" in st.session_state
-                if add_cols[0].button("+ High", disabled=not has_batch, key="pri_add_high"):
-                    add_priority_workflows(client, add_count, 1, use_priority)
-                if add_cols[1].button("+ Med", disabled=not has_batch, key="pri_add_med"):
-                    add_priority_workflows(client, add_count, 3, use_priority)
-                if add_cols[2].button("+ Low", disabled=not has_batch, key="pri_add_low"):
-                    add_priority_workflows(client, add_count, 5, use_priority)
 
-                st.divider()
-                st.markdown("**Legend**")
-                legend = render_legend([
-                    (PRIORITY_COLORS[1], "P1 High"),
-                    (PRIORITY_COLORS[3], "P3 Medium"),
-                    (PRIORITY_COLORS[5], "P5 Low"),
-                ])
-                st.markdown(legend, unsafe_allow_html=True)
+                def _ensure_pri_batch():
+                    if "workflows" not in st.session_state or st.session_state.get("tab") != "priority":
+                        _reset_batch()
+                        st.session_state["tab"] = "priority"
 
-            # --- Priority content ---
+                for pri, label in [(1, "P1 High"), (3, "P3 Medium"), (5, "P5 Low")]:
+                    color = PRIORITY_COLORS[pri]
+                    dot_col, btn_col = st.columns([0.12, 0.88])
+                    dot_col.markdown(
+                        f'<div style="width:14px; height:14px; background:{color}; '
+                        f'border-radius:{RADIUS}; margin-top:10px;"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    if btn_col.button(f"+ {label}", key=f"pri_add_{pri}"):
+                        _ensure_pri_batch()
+                        add_priority_workflows(client, add_count, pri, use_priority)
+
             title = "Priority" if use_priority else "FIFO (no priority)"
             st.markdown(f"## {title}")
 
@@ -328,7 +363,6 @@ def main():
 
     with tab_fairness:
         if tab_fairness.open:
-            # --- Fairness sidebar ---
             with st.sidebar:
                 st.header("Fairness Controls")
 
@@ -345,25 +379,24 @@ def main():
                 st.divider()
                 st.markdown("**Add to batch**")
                 add_count_f = st.slider("Count to add", 1, 20, 5, key="fair_add_count")
-                add_cols_f = st.columns(3)
-                has_batch_f = "workflows" in st.session_state
-                if add_cols_f[0].button("+ Big", disabled=not has_batch_f, key="fair_add_big"):
-                    add_fairness_workflows(client, add_count_f, "tenant-big", use_fairness)
-                if add_cols_f[1].button("+ Mid", disabled=not has_batch_f, key="fair_add_mid"):
-                    add_fairness_workflows(client, add_count_f, "tenant-mid", use_fairness)
-                if add_cols_f[2].button("+ Small", disabled=not has_batch_f, key="fair_add_small"):
-                    add_fairness_workflows(client, add_count_f, "tenant-small", use_fairness)
 
-                st.divider()
-                st.markdown("**Legend**")
-                legend_f = render_legend([
-                    (TENANT_COLORS["tenant-big"], "Big (30)"),
-                    (TENANT_COLORS["tenant-mid"], "Mid (10)"),
-                    (TENANT_COLORS["tenant-small"], "Small (5)"),
-                ])
-                st.markdown(legend_f, unsafe_allow_html=True)
+                def _ensure_fair_batch():
+                    if "workflows" not in st.session_state or st.session_state.get("tab") != "fairness":
+                        _reset_batch()
+                        st.session_state["tab"] = "fairness"
 
-            # --- Fairness content ---
+                for tenant, label in [("tenant-big", "Big"), ("tenant-mid", "Mid"), ("tenant-small", "Small")]:
+                    color = TENANT_COLORS[tenant]
+                    dot_col, btn_col = st.columns([0.12, 0.88])
+                    dot_col.markdown(
+                        f'<div style="width:14px; height:14px; background:{color}; '
+                        f'border-radius:{RADIUS}; margin-top:10px;"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    if btn_col.button(f"+ {label}", key=f"fair_add_{tenant}"):
+                        _ensure_fair_batch()
+                        add_fairness_workflows(client, add_count_f, tenant, use_fairness)
+
             title = "Fairness" if use_fairness else "No Fairness (noisy neighbor)"
             st.markdown(f"## {title}")
 
@@ -376,9 +409,13 @@ def main():
             else:
                 render_all_swimlanes([], lambda wf: wf["submitted_at"], render_fairness_chiclet)
 
-    # Always auto-refresh
-    time.sleep(0.1)
-    st.rerun()
+    # Auto-refresh only when there are active workflows
+    workflows = st.session_state.get("workflows", [])
+    if workflows:
+        n_completed = len(st.session_state.get("completed_order", []))
+        if n_completed < len(workflows):
+            time.sleep(0.1)
+            st.rerun()
 
 
 if __name__ == "__main__":
