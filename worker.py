@@ -5,8 +5,8 @@ from temporalio.client import Client
 from temporalio.envconfig import ClientConfig
 from temporalio.worker import Worker
 
-from activities.process_order import process_order
-from workflows.order_workflow import OrderWorkflow
+from activities.handle_chat_turn import handle_chat_turn
+from workflows.chat_turn_workflow import ChatTurnWorkflow
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,8 +19,8 @@ async def main():
     worker = Worker(
         client,
         task_queue="priority-fairness-task-queue",
-        workflows=[OrderWorkflow],
-        activities=[process_order],
+        workflows=[ChatTurnWorkflow],
+        activities=[handle_chat_turn],
         max_concurrent_activities=1,
         disable_eager_activity_execution=True,
     )

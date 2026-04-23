@@ -5,7 +5,8 @@ from temporalio.client import Client
 from temporalio.common import Priority
 from temporalio.envconfig import ClientConfig
 
-from workflows.order_workflow import OrderWorkflow, ProcessOrderInput
+from activities.handle_chat_turn import ChatTurnInput
+from workflows.chat_turn_workflow import ChatTurnWorkflow
 
 
 async def main():
@@ -13,20 +14,19 @@ async def main():
     config.setdefault("target_host", "localhost:7233")
     client = await Client.connect(**config)
 
-    # Start 50 workflows concurrently with mixed priorities
     async def start_one(i):
-        priority = random.choice([1, 3, 5])
+        tier = random.choice([1, 3, 5])
         await client.start_workflow(
-            OrderWorkflow.run,
-            ProcessOrderInput(f"ORD-{i:03d}", f"tenant-{i}", priority),
-            id=f"order-ORD-{i:03d}",
+            ChatTurnWorkflow.run,
+            ChatTurnInput(f"turn-{i:03d}", f"customer-{i}", tier),
+            id=f"chat-turn-{i:03d}",
             task_queue="priority-fairness-task-queue",
-            priority=Priority(priority_key=priority),
+            priority=Priority(priority_key=tier),
         )
-        print(f"Started ORD-{i:03d} priority={priority}")
+        print(f"Started chat-turn-{i:03d} tier={tier}")
 
     await asyncio.gather(*[start_one(i) for i in range(50)])
-    print("\nAll 50 workflows started. Watch the worker logs for execution order.")
+    print("\nAll 50 chat turns started. Watch the worker logs for execution order.")
 
 
 if __name__ == "__main__":

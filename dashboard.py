@@ -8,7 +8,8 @@ from temporalio.client import Client
 from temporalio.common import Priority
 from temporalio.envconfig import ClientConfig
 
-from workflows.order_workflow import OrderWorkflow, ProcessOrderInput
+from activities.handle_chat_turn import ChatTurnInput
+from workflows.chat_turn_workflow import ChatTurnWorkflow
 
 TASK_QUEUE = "priority-fairness-task-queue"
 
@@ -50,15 +51,32 @@ FONT_SANS = "'Inter', sans-serif"
 FONT_MONO = "'Noto Sans Mono', monospace"
 
 # --- Feature colors mapped to Holocene palette ---
-PRIORITY_LABELS = {1: "High", 3: "Medium", 5: "Low"}
-PRIORITY_COLORS = {1: RED_400, 3: YELLOW_400, 5: BLUE_500}
+# Consumer tiers: Pro ($200/mo), Plus ($20/mo), Free
+TIER_LABELS = {1: "Pro $200/mo", 3: "Plus $20/mo", 5: "Free"}
+TIER_CODES = {1: "P1", 3: "P2", 5: "P3"}
+TIER_COLORS = {1: RED_400, 3: YELLOW_400, 5: BLUE_500}
 
-TENANT_COLORS = {
-    "tenant-big": RED_400,
-    "tenant-mid": YELLOW_400,
-    "tenant-small": BLUE_500,
+# Enterprise customers (within the Pro tier)
+CUSTOMER_COLORS = {
+    "bigcorp": RED_400,
+    "midco": YELLOW_400,
+    "startup": BLUE_500,
 }
-TENANT_COUNTS = {"tenant-big": 30, "tenant-mid": 10, "tenant-small": 5}
+CUSTOMER_LABELS = {
+    "bigcorp": "BigCorp",
+    "midco": "MidCo",
+    "startup": "Startup",
+}
+CUSTOMER_CODES = {
+    "bigcorp": "B",
+    "midco": "M",
+    "startup": "S",
+}
+CUSTOMER_WEIGHTS = {
+    "bigcorp": 10.0,
+    "midco": 3.0,
+    "startup": 1.0,
+}
 
 
 # --- Streamlit theme override ---
@@ -94,33 +112,35 @@ def _next_seq():
     return seq
 
 
-def _start_one(client, priority, tenant, use_priority=False, use_fairness=False):
+def _start_one(client, tier, customer, use_priority=False, use_fairness=False, use_weights=False):
     batch_id = st.session_state["batch_id"]
     seq = _next_seq()
-    order_id = f"ORD-{batch_id}-{seq:03d}"
-    wf_id = f"order-{order_id}"
+    turn_id = f"turn-{batch_id}-{seq:03d}"
+    wf_id = f"chat-{turn_id}"
 
     start_kwargs = dict(id=wf_id, task_queue=TASK_QUEUE)
     if use_priority or use_fairness:
         pri_kwargs = {}
         if use_priority:
-            pri_kwargs["priority_key"] = priority
+            pri_kwargs["priority_key"] = tier
         if use_fairness:
-            pri_kwargs["fairness_key"] = tenant
+            pri_kwargs["fairness_key"] = customer
+            if use_weights:
+                pri_kwargs["fairness_weight"] = CUSTOMER_WEIGHTS.get(customer, 1.0)
         start_kwargs["priority"] = Priority(**pri_kwargs)
 
     run_async(
         client.start_workflow(
-            OrderWorkflow.run,
-            ProcessOrderInput(order_id, tenant, priority),
+            ChatTurnWorkflow.run,
+            ChatTurnInput(turn_id, customer, tier),
             **start_kwargs,
         )
     )
     return {
         "id": wf_id,
-        "order_id": order_id,
-        "priority": priority,
-        "tenant": tenant,
+        "turn_id": turn_id,
+        "tier": tier,
+        "customer": customer,
         "submitted_at": datetime.now(),
     }
 
@@ -138,43 +158,44 @@ def start_priority_batch(client, count, use_priority):
     st.session_state["tab"] = "priority"
     workflows = []
     for i in range(count):
-        priority = random.choice([1, 3, 5])
+        tier = random.choice([1, 3, 5])
         workflows.append(
-            _start_one(client, priority, f"tenant-{i}", use_priority=use_priority)
+            _start_one(client, tier, f"customer-{i}", use_priority=use_priority)
         )
     st.session_state["workflows"] = workflows
 
 
-def start_fairness_batch(client, total_count, use_fairness):
+def start_fairness_batch(client, total_count, use_fairness, use_weights=False):
     _reset_batch()
     st.session_state["tab"] = "fairness"
-    big = max(1, int(total_count * 0.6))
-    mid = max(1, int(total_count * 0.25))
+    big = max(1, int(total_count * 0.8))
+    mid = max(1, int(total_count * 0.15))
     small = max(1, total_count - big - mid)
-    workflows = []
-    for _ in range(big):
-        workflows.append(_start_one(client, 3, "tenant-big", use_fairness=use_fairness))
-    for _ in range(mid):
-        workflows.append(_start_one(client, 3, "tenant-mid", use_fairness=use_fairness))
-    for _ in range(small):
-        workflows.append(_start_one(client, 3, "tenant-small", use_fairness=use_fairness))
+    customers = (
+        ["bigcorp"] * big + ["midco"] * mid + ["startup"] * small
+    )
+    random.shuffle(customers)
+    workflows = [
+        _start_one(client, 1, customer, use_fairness=use_fairness, use_weights=use_weights)
+        for customer in customers
+    ]
     st.session_state["workflows"] = workflows
 
 
-def add_priority_workflows(client, count, priority, use_priority):
+def add_priority_workflows(client, count, tier, use_priority):
     existing = st.session_state.get("workflows", [])
     for _ in range(count):
         existing.append(
-            _start_one(client, priority, "tenant-x", use_priority=use_priority)
+            _start_one(client, tier, "customer-x", use_priority=use_priority)
         )
     st.session_state["workflows"] = existing
 
 
-def add_fairness_workflows(client, count, tenant, use_fairness):
+def add_fairness_workflows(client, count, customer, use_fairness, use_weights=False):
     existing = st.session_state.get("workflows", [])
     for _ in range(count):
         existing.append(
-            _start_one(client, 3, tenant, use_fairness=use_fairness)
+            _start_one(client, 1, customer, use_fairness=use_fairness, use_weights=use_weights)
         )
     st.session_state["workflows"] = existing
 
@@ -208,25 +229,26 @@ def poll_statuses(client, workflows):
 # --- Rendering ---
 
 def render_priority_chiclet(wf):
-    pri = wf.get("priority", 3)
-    color = PRIORITY_COLORS.get(pri, TEXT_SUBTLE)
+    tier = wf.get("tier", 3)
+    color = TIER_COLORS.get(tier, TEXT_SUBTLE)
+    label = TIER_CODES.get(tier, "?")
     return (
-        f'<div title="{wf["order_id"]} P{pri}" style="'
+        f'<div title="{wf["turn_id"]} {TIER_LABELS.get(tier, "?")}" style="'
         f"width:28px; height:28px; background:{color}; border-radius:{RADIUS}; "
         f"display:inline-flex; align-items:center; justify-content:center; "
         f"margin:2px; font-size:10px; font-weight:600; color:{SURFACE_PRIMARY}; "
         f'font-family:{FONT_MONO};">'
-        f"{pri}"
+        f"{label}"
         f"</div>"
     )
 
 
 def render_fairness_chiclet(wf):
-    tenant = wf.get("tenant", "unknown")
-    color = TENANT_COLORS.get(tenant, TEXT_SUBTLE)
-    label = tenant.split("-")[-1][0].upper() if "-" in tenant else "?"
+    customer = wf.get("customer", "unknown")
+    color = CUSTOMER_COLORS.get(customer, TEXT_SUBTLE)
+    label = CUSTOMER_CODES.get(customer, "?")
     return (
-        f'<div title="{wf["order_id"]} {tenant}" style="'
+        f'<div title="{wf["turn_id"]} {CUSTOMER_LABELS.get(customer, customer)}" style="'
         f"width:28px; height:28px; background:{color}; border-radius:{RADIUS}; "
         f"display:inline-flex; align-items:center; justify-content:center; "
         f"margin:2px; font-size:10px; font-weight:600; color:{SURFACE_PRIMARY}; "
@@ -290,7 +312,7 @@ def render_all_swimlanes(workflows, sort_fn, render_fn):
 # --- Main ---
 
 def main():
-    st.set_page_config(page_title="Task Queue Priority & Fairness", layout="wide")
+    st.set_page_config(page_title="AI Assistant: Priority & Fairness", layout="wide")
     apply_theme()
 
     client = get_client()
@@ -316,8 +338,8 @@ def main():
                 if st.button("Start Batch", type="primary", key="pri_start"):
                     st.session_state["_pri_start"] = True
 
-                count = st.slider("Workflows", 10, 50, 30, key="pri_count")
-                use_priority = st.toggle("Enable priority", value=True, key="pri_toggle")
+                count = st.slider("Chat turns", 10, 45, 30, key="pri_count")
+                use_priority = st.toggle("Enable priority", value=False, key="pri_toggle")
 
                 if st.session_state.pop("_pri_start", False):
                     with st.spinner("Starting workflows..."):
@@ -332,19 +354,24 @@ def main():
                         _reset_batch()
                         st.session_state["tab"] = "priority"
 
-                for pri, label in [(1, "P1 High"), (3, "P3 Medium"), (5, "P5 Low")]:
-                    color = PRIORITY_COLORS[pri]
-                    dot_col, btn_col = st.columns([0.12, 0.88])
+                for tier in [1, 3, 5]:
+                    color = TIER_COLORS[tier]
+                    code = TIER_CODES[tier]
+                    tier_label = TIER_LABELS[tier]
+                    dot_col, btn_col = st.columns([0.18, 0.82])
                     dot_col.markdown(
-                        f'<div style="width:14px; height:14px; background:{color}; '
-                        f'border-radius:{RADIUS}; margin-top:10px;"></div>',
+                        f'<div style="width:28px; height:28px; background:{color}; '
+                        f'border-radius:{RADIUS}; margin-top:4px; '
+                        f'display:flex; align-items:center; justify-content:center; '
+                        f'font-size:11px; font-weight:600; color:{SURFACE_PRIMARY}; '
+                        f'font-family:{FONT_MONO};">{code}</div>',
                         unsafe_allow_html=True,
                     )
-                    if btn_col.button(f"+ {label}", key=f"pri_add_{pri}"):
+                    if btn_col.button(f"+ {code} ({tier_label})", key=f"pri_add_{tier}"):
                         _ensure_pri_batch()
-                        add_priority_workflows(client, add_count, pri, use_priority)
+                        add_priority_workflows(client, add_count, tier, use_priority)
 
-            title = "Priority" if use_priority else "FIFO (no priority)"
+            title = "Priority: Pro > Plus > Free" if use_priority else "FIFO: Pro = Plus = Free"
             st.markdown(f"## {title}")
 
             workflows = st.session_state.get("workflows", [])
@@ -353,7 +380,7 @@ def main():
                 st.session_state["workflows"] = workflows
 
                 if use_priority:
-                    sort_fn = lambda wf: (wf["priority"], wf["submitted_at"])
+                    sort_fn = lambda wf: (wf["tier"], wf["submitted_at"])
                 else:
                     sort_fn = lambda wf: wf["submitted_at"]
 
@@ -369,12 +396,18 @@ def main():
                 if st.button("Start Batch", type="primary", key="fair_start"):
                     st.session_state["_fair_start"] = True
 
-                fair_count = st.slider("Workflows", 10, 50, 30, key="fair_count")
-                use_fairness = st.toggle("Enable fairness", value=True, key="fair_toggle")
+                fair_count = st.slider("Chat turns", 10, 45, 30, key="fair_count")
+                use_fairness = st.toggle("Enable fairness", value=False, key="fair_toggle")
+                use_weights = st.toggle(
+                    "Use weights",
+                    value=False,
+                    key="fair_weights_toggle",
+                    disabled=not use_fairness,
+                )
 
                 if st.session_state.pop("_fair_start", False):
                     with st.spinner("Starting workflows..."):
-                        start_fairness_batch(client, fair_count, use_fairness)
+                        start_fairness_batch(client, fair_count, use_fairness, use_weights)
 
                 st.divider()
                 st.markdown("**Add to batch**")
@@ -385,19 +418,29 @@ def main():
                         _reset_batch()
                         st.session_state["tab"] = "fairness"
 
-                for tenant, label in [("tenant-big", "Big"), ("tenant-mid", "Mid"), ("tenant-small", "Small")]:
-                    color = TENANT_COLORS[tenant]
-                    dot_col, btn_col = st.columns([0.12, 0.88])
+                for customer in ["bigcorp", "midco", "startup"]:
+                    color = CUSTOMER_COLORS[customer]
+                    code = CUSTOMER_CODES[customer]
+                    cust_label = CUSTOMER_LABELS[customer]
+                    dot_col, btn_col = st.columns([0.18, 0.82])
                     dot_col.markdown(
-                        f'<div style="width:14px; height:14px; background:{color}; '
-                        f'border-radius:{RADIUS}; margin-top:10px;"></div>',
+                        f'<div style="width:28px; height:28px; background:{color}; '
+                        f'border-radius:{RADIUS}; margin-top:4px; '
+                        f'display:flex; align-items:center; justify-content:center; '
+                        f'font-size:11px; font-weight:600; color:{SURFACE_PRIMARY}; '
+                        f'font-family:{FONT_MONO};">{code}</div>',
                         unsafe_allow_html=True,
                     )
-                    if btn_col.button(f"+ {label}", key=f"fair_add_{tenant}"):
+                    if btn_col.button(f"+ {code} ({cust_label})", key=f"fair_add_{customer}"):
                         _ensure_fair_batch()
-                        add_fairness_workflows(client, add_count_f, tenant, use_fairness)
+                        add_fairness_workflows(client, add_count_f, customer, use_fairness, use_weights)
 
-            title = "Fairness" if use_fairness else "No Fairness (noisy neighbor)"
+            if use_fairness and use_weights:
+                title = "Weighted Fairness: BigCorp Gets More, Startup Still Served"
+            elif use_fairness:
+                title = "Fairness: MidCo/Startup Protected"
+            else:
+                title = "FIFO: BigCorp Dominates"
             st.markdown(f"## {title}")
 
             workflows = st.session_state.get("workflows", [])
