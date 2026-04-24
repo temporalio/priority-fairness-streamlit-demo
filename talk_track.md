@@ -1,27 +1,17 @@
-# Priority & Fairness — 90-Second Talk Track
+# Priority & Fairness — Talk Track
 
-## Hook
+I'm John from the Temporal Product team, and I'm going to run through a quick demo of Priority and Fairness.
 
-Most AI products underserve their best users. I'll show you how this can happen, and how to fix it.
+Say we're operating an AI chat application with Free, Plus, and Pro users, and each chat turn is running a Temporal workflow. You can see that each turn is executing on a first-come, first-serve basis, regardless of the customer's tier.
 
-## Set the stage
+When there is a large spike in free traffic, the pro traffic is gonna end up waiting behind those free users, which is undesirable.
 
-This is a simulation of an AI assistant running on Temporal. Each colored block is a chat turn — a user's request moving through the system. They flow from Queued, to Running, to Completed. Free, Plus, and Pro users all share the same system.
+To avoid this issue, we can use Priority, which enforces that high priority workloads execute ahead of lower-priority workloads. You can set Priority on a Workflow or Activity, and in the temporal UI, and we can see the priority setting here.
 
-## The priority problem
+So now if we have a big spike in free traffic, our pro users, when they come in, are gonna jump the line. This enables us to provide a higher level of service to our paying customers, while still serving the free tier.
 
-Here, I'm showing what happens by default - requests are processed on a first-come, first-serve basis. You can see here that our high-paying Pro users are waiting in line behind a bunch of free users. Now let's imagine Free usage spikes in a viral moment. And here are your $200-a-month Pro customers, queuing up at the back. They wait. The customer who pays the most is waiting the longest.
+Now say within the Pro tier, we have Startups, MidCos, and BigCorps, the latter of which can have large traffic surges. You can see that the spike coming from the BigCorps is interfering with the Startup and MidCo executions. 
 
-## Priority, the fix
+In order to alleviate this noisy neighbor problem, we can turn on Fairness. With fairness, our executions are going to be interspersed according to the fairness weights, such that small and medium customers still have some room to execute, despite there being a big spike from the largest customer.
 
-Now when I turn on Priority, Pro runs before Plus, which runs before Free. Your paying customers jump to the front. Free users still run — just when capacity opens up.
-
-## The fairness problem and fix
-
-Now say within your Pro tier, you have different sized customers — BigCorp, MidCo, and Startup. Watch what happens. When BigCorp spikes, it totally dominates the capacity, starving out MidCo and Startup. With fairness, you can ensure your small customers don't get throttled by load from your biggest ones. 
-
-And if you still want BigCorp to get more capacity — just not all of it — turn on weighted fairness. Here, I've set fairness weights such that BigCorp can execute up to about seventy percent of the time, but no more. MidCo and Startup still get served.
-
-## Recap
-
-So that's priority and fairness. Priority makes sure paying customers are served first. Fairness keeps a single heavy customer from blocking everyone else. And weights let you tune the mix to match how your business actually works.
+So, that's a quick demo of priority and fairness. Priority allows you to prioritize between different customer tiers, and fairness acts within a tier to ensure that each customer is treated fairly.
