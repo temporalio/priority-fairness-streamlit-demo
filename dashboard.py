@@ -457,7 +457,7 @@ def main():
     if workflows:
         n_completed = len(st.session_state.get("completed_order", []))
         if n_completed < len(workflows):
-            time.sleep(0.1)
+            time.sleep(1.0)
             st.rerun()
 
 
