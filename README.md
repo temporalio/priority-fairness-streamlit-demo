@@ -2,6 +2,8 @@
 
 Interactive demo of Temporal's task queue priority and fairness features using a Streamlit dashboard.
 
+![Demo](demo.gif)
+
 ## Prerequisites
 
 - Python 3.12+
