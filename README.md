@@ -49,15 +49,13 @@ Open [http://localhost:8501](http://localhost:8501) and use the **Priority** and
 
 ![Task queue concurrency demo](concurrency.gif)
 
-Stop any local Temporal server or Streamlit process using those ports, then run:
+Stop any local Temporal server or Streamlit process, then run:
 
 ```bash
 docker compose up --build
 ```
 
-Compose builds the pinned preview server and the Python demo application locally, creates the `default` namespace, and starts the dashboard and all workers. The first server build can take several minutes; subsequent runs use Docker's build cache. Open [http://localhost:8501](http://localhost:8501); all four tabs are available in this setup.
-
-The stack is isolated from Temporal Cloud. It connects directly to its own `temporal` container and does not read or modify Temporal CLI profiles.
+Compose builds the pinned preview server and the Python demo application locally, creates the `default` namespace, and starts the dashboard and all workers. The first server build can take several minutes. Open [http://localhost:8501](http://localhost:8501)
 
 Stop it when finished:
 
