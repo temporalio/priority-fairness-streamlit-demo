@@ -1,20 +1,19 @@
 import asyncio
 import logging
 
-from temporalio.client import Client
-from temporalio.envconfig import ClientConfig
 from temporalio.worker import Worker
 
 from activities.handle_chat_turn import handle_chat_turn
+from demo_config import DEMO_ADDRESS, connect_local_client
 from workflows.chat_turn_workflow import ChatTurnWorkflow
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def main():
-    config = ClientConfig.load_client_connect_config()
-    config.setdefault("target_host", "localhost:7233")
-    client = await Client.connect(**config)
+    client = await connect_local_client(identity="priority-fairness-worker")
+    logger.info("Connecting priority/fairness worker to %s", DEMO_ADDRESS)
 
     worker = Worker(
         client,

@@ -1,0 +1,14 @@
+matching.useNewMatcher:
+  - value: true
+matching.enableFairness:
+  - value: true
+matching.numTaskqueueReadPartitions:
+  - value: 1
+    constraints:
+      namespace: "default"
+      taskQueueName: "concurrency-fairness-demo-task-queue"
+matching.numTaskqueueWritePartitions:
+  - value: 1
+    constraints:
+      namespace: "default"
+      taskQueueName: "concurrency-fairness-demo-task-queue"

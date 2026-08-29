@@ -1,20 +1,17 @@
 import asyncio
 import random
 
-from temporalio.client import Client
 from temporalio.common import Priority
-from temporalio.envconfig import ClientConfig
 
 from activities.handle_chat_turn import ChatTurnInput
+from demo_config import DEMO_ADDRESS, connect_local_client
 from workflows.chat_turn_workflow import ChatTurnWorkflow
 
 
 async def main():
-    config = ClientConfig.load_client_connect_config()
-    config.setdefault("target_host", "localhost:7233")
-    client = await Client.connect(**config)
+    client = await connect_local_client(identity="priority-fairness-starter")
 
-    target_host = config["target_host"]
+    target_host = DEMO_ADDRESS
     if "localhost" in target_host or "127.0.0.1" in target_host:
         ui_base = "http://localhost:8233"
     else:

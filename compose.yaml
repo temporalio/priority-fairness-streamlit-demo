@@ -1,0 +1,65 @@
+x-demo-environment: &demo-environment
+  TEMPORAL_DEMO_ADDRESS: temporal:7233
+  TEMPORAL_DEMO_HTTP_ADDRESS: http://temporal:7243
+  TEMPORAL_DEMO_NAMESPACE: default
+
+services:
+  temporal:
+    build:
+      context: .
+      dockerfile: preview/server.Dockerfile
+    image: temporal-task-queue-concurrency-preview:0d77be1f0
+    ports:
+      - "7233:7233"
+      - "7243:7243"
+
+  bootstrap:
+    build: .
+    image: priority-fairness-concurrency-demo:local
+    command: ["python", "bootstrap.py"]
+    environment: *demo-environment
+    depends_on:
+      temporal:
+        condition: service_started
+
+  workers:
+    build: .
+    image: priority-fairness-concurrency-demo:local
+    command: ["python", "demo_workers.py"]
+    environment: *demo-environment
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+
+  dashboard:
+    build: .
+    image: priority-fairness-concurrency-demo:local
+    environment: *demo-environment
+    ports:
+      - "8501:8501"
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=2)
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  e2e:
+    build: .
+    image: priority-fairness-concurrency-demo:local
+    command: ["python", "-m", "scripts.e2e_smoke"]
+    environment:
+      <<: *demo-environment
+      STREAMLIT_HEALTH_URL: http://dashboard:8501/_stcore/health
+    profiles: ["test"]
+    depends_on:
+      workers:
+        condition: service_started
+      dashboard:
+        condition: service_healthy
