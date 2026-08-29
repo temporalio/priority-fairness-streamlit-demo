@@ -58,7 +58,7 @@ Stop any local Temporal server or Streamlit process using those ports, then run:
 docker compose up --build
 ```
 
-Compose pulls the pinned preview server image, builds the Python demo application, creates the `default` namespace, and starts the dashboard and all workers. Open [http://localhost:8501](http://localhost:8501); all four tabs are available in this setup.
+Compose builds the pinned preview server and the Python demo application locally, creates the `default` namespace, and starts the dashboard and all workers. The first server build can take several minutes; subsequent runs use Docker's build cache. Open [http://localhost:8501](http://localhost:8501); all four tabs are available in this setup.
 
 The stack is isolated from Temporal Cloud. It connects directly to its own `temporal` container and does not read or modify Temporal CLI profiles.
 
@@ -104,15 +104,6 @@ The preview image is built reproducibly by [`preview/server.Dockerfile`](preview
 - Go protobuf generator: `v1.36.10`
 
 The API work is tracked in [temporalio/api#852](https://github.com/temporalio/api/pull/852). The Docker build generates the two required Go API files itself; it does not depend on a sibling checkout or uncommitted generated code.
-
-The published image used by Compose is `ghcr.io/temporalio/priority-fairness-streamlit-demo-server-preview:0d77be1f0`. To rebuild that server image locally instead of pulling it:
-
-```bash
-docker build \
-  --file preview/server.Dockerfile \
-  --tag ghcr.io/temporalio/priority-fairness-streamlit-demo-server-preview:0d77be1f0 \
-  .
-```
 
 The preview configuration enables priority and Fairness globally, keeps the default four partitions for the concurrency queue, and constrains only `concurrency-fairness-demo-task-queue` to one partition.
 

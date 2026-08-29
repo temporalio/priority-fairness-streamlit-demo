@@ -5,7 +5,10 @@ x-demo-environment: &demo-environment
 
 services:
   temporal:
-    image: ghcr.io/temporalio/priority-fairness-streamlit-demo-server-preview:0d77be1f0
+    build:
+      context: .
+      dockerfile: preview/server.Dockerfile
+    image: temporal-task-queue-concurrency-preview:0d77be1f0
     ports:
       - "7233:7233"
       - "7243:7243"
