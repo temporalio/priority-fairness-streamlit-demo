@@ -47,6 +47,8 @@ Open [http://localhost:8501](http://localhost:8501) and use the **Priority** and
 > [!WARNING]
 > Task queue concurrency is an experimental engineering snapshot, not a pre-release feature. This setup uses pinned, unreleased server and API code and must not be used for production workloads.
 
+![Task queue concurrency demo](concurrency.gif)
+
 Prerequisites:
 
 - Docker with Docker Compose
