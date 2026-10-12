@@ -7,3 +7,6 @@ dependencies = [
     "streamlit>=1.56.0",
     "temporalio>=1.26.0",
 ]
+
+[tool.uv]
+exclude-newer = "2 weeks"
