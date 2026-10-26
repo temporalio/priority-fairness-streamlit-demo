@@ -1,6 +1,6 @@
 # Priority, Fairness & Concurrency Demo
 
-Interactive Streamlit demos of Temporal task queue priority, Fairness, and queue-wide concurrency.
+Interactive Streamlit demos of Temporal task queue priority, Fairness, and queue-wide concurrency (the latter of which is in dev, unreleased).
 
 ## Feature status
 
